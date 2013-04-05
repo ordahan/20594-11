@@ -20,4 +20,5 @@ clean:
 	rm -f a.out
 	rm -f *~
 	rm -f ph
-	rm -f *a 
+#	rm -f *a
+	rm -f libut.a 
