@@ -1,5 +1,5 @@
 all: binsem.a ut.a ph 
-FLAGS = -Wall  -L./
+FLAGS = -Wall -g -L./
 	
 ph: ph.c 
 	gcc ${FLAGS} ph.c -lbinsem -lut -o ph
