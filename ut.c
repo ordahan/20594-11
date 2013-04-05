@@ -5,6 +5,7 @@
  *      Author: Or Dahan 201644929
  */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
@@ -190,19 +191,30 @@ int ut_start(void)
 	s_running_thread_id = 0;
 
 	/* Start running the system */
-
+	errno = 0;
 	alarm(QUANTOM_SEC);
-	swapcontext(&s_runner_context, &s_threads[s_running_thread_id].uc);
+	/* If swapcontext returns, its an error.
+	 * Will set 'errno' on any failure.
+	 */
+	swapcontext(&s_runner_context,
+				&s_threads[s_running_thread_id].uc);
+
+	/* Make sure system started */
+	if (errno != 0)
+	{
+		return SYS_ERR;
+	}
 
 	return 0;
 }
 
 unsigned long ut_get_vtime(tid_t tid)
 {
-	if (s_threads == NULL)
+	/* Don't access illegal memory */
+	if (s_threads == NULL ||
+		tid > s_threads_size)
 	{
-		/* TODO: perror */
-		exit(1);
+		return 0;
 	}
 
 	return s_threads[tid].vtime;
@@ -210,16 +222,29 @@ unsigned long ut_get_vtime(tid_t tid)
 
 void scheduler(int signal)
 {
+	// Make sure thread table allocated
+	if (s_threads == NULL)
+	{
+		errno = 1;
+		perror("scheduler cannot access thread table as it doesn't exist.\n");
+		exit(1);
+	}
+
 	/* Set the next scheduling to occur */
+	errno = 0;
 	alarm(QUANTOM_SEC);
 
 	/* Handle thread list's circularity,
 	 * next one on the list */
 	s_running_thread_id = (s_running_thread_id + 1) % s_threads_size;
-/*	printf("in signal handler: switching from %d to %d\n",
-			s_running_thread,
-			THREAD_NUM + 1 - s_running_thread); */
 	swapcontext(&s_current_context, &s_threads[s_running_thread_id].uc);
+
+	/* Critical error.. */
+	if (errno != 0)
+	{
+		perror("scheduler\n");
+		exit(1);
+	}
 }
 
 unsigned int init_scheduler()
@@ -228,16 +253,11 @@ unsigned int init_scheduler()
 
 	/* Prepare the scheduler's handler struct */
 	sa.sa_flags = SA_RESTART;
-	sigfillset(&sa.sa_mask);
+	if (sigfillset(&sa.sa_mask) == SYS_ERR) return SYS_ERR;
 	sa.sa_handler = scheduler;
 
-	/* TODO: perror */
-
 	/* Set the 'scheduler' signal */
-	if (sigaction(SIGALRM, &sa, NULL) < 0)
-	{
-		return SYS_ERR;
-	}
+	if (sigaction(SIGALRM, &sa, NULL) < 0) return SYS_ERR;
 
 	return 0;
 }
@@ -247,7 +267,8 @@ void profiler(int signal)
 	// Make sure thread table allocated
 	if (s_threads == NULL)
 	{
-		/* TODO: perror */
+		errno = 1;
+		perror("profiler cannot access thread table as it doesn't exist.\n");
 		exit(1);
 	}
 
@@ -262,7 +283,7 @@ int init_profiler()
 
 	/* Initialize the data structures for SIGVTALRM handling. */
 	sa.sa_flags = SA_RESTART;
-	sigfillset(&sa.sa_mask);
+	if (sigfillset(&sa.sa_mask) == SYS_ERR) return SYS_ERR;
 	sa.sa_handler = profiler;
 
 	/* set up vtimer for accounting */
