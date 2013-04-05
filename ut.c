@@ -8,11 +8,14 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <sys/time.h>
 
 #include "ut.h"
 
 /* Internal definitions */
-const unsigned int QUANTOM_SEC = 1;
+#define QUANTOM_SEC (1)
+#define PROFILER_INTERVAL_MSEC (10)
+#define PROFILER_INTERVAL_USEC (PROFILER_INTERVAL_MSEC * 1000)
 
 typedef void (*thread_main)(int);
 
@@ -43,6 +46,34 @@ void set_num_threads_in_valid_range(int tab_size);
  */
 void scheduler(int signal);
 
+/**
+ * Counts the number of msec the current thread is running.
+ * @param signal
+ */
+void profiler(int signal);
+
+/**
+ * Initializes the scheduler mechanism.
+ * @return 0 - Success
+ * 		   SYS_ERR - On any failure
+ */
+unsigned int init_scheduler();
+
+/**
+ * Initializes the profiler mechanism.
+ * @return 0 - Success
+ * 		   SYS_ERR - On any failure
+ */
+int init_profiler();
+
+/**
+ * Prepares all the threads in the table
+ * to "ready" mode
+ * @return 0 - Success
+ 		   SYS_ERR - On any failure
+ */
+int prepare_all_threads();
+
 /* Implementations */
 void set_num_threads_in_valid_range(int tab_size)
 {
@@ -61,7 +92,6 @@ void set_num_threads_in_valid_range(int tab_size)
 		s_threads_size = tab_size;
 	}
 }
-
 
 int ut_init(int tab_size)
 {
@@ -89,7 +119,6 @@ int ut_init(int tab_size)
 
 	return 0;
 }
-
 
 tid_t ut_spawn_thread(thread_main main, int arg)
 {
@@ -148,21 +177,119 @@ tid_t ut_spawn_thread(thread_main main, int arg)
 
 int ut_start(void)
 {
-	struct sigaction sa;
-	unsigned int i;
+	/* Init scheduler mechanism */
+	if (init_scheduler() != 0) return SYS_ERR;
 
-	/* Set the 'scheduler' signal */
+	/* Set the 'profiler' signal */
+	if (init_profiler() != 0) return SYS_ERR;
+
+	/* Start all the threads */
+	if (prepare_all_threads() != 0) return SYS_ERR;
+
+	/* Init to run the first thread */
+	s_running_thread_id = 0;
+
+	/* Start running the system */
+
+	alarm(QUANTOM_SEC);
+	swapcontext(&s_runner_context, &s_threads[s_running_thread_id].uc);
+
+	return 0;
+}
+
+unsigned long ut_get_vtime(tid_t tid)
+{
+	if (s_threads == NULL)
+	{
+		/* TODO: perror */
+		exit(1);
+	}
+
+	return s_threads[tid].vtime;
+}
+
+void scheduler(int signal)
+{
+	/* Set the next scheduling to occur */
+	alarm(QUANTOM_SEC);
+
+	/* Handle thread list's circularity,
+	 * next one on the list */
+	s_running_thread_id = (s_running_thread_id + 1) % s_threads_size;
+/*	printf("in signal handler: switching from %d to %d\n",
+			s_running_thread,
+			THREAD_NUM + 1 - s_running_thread); */
+	swapcontext(&s_current_context, &s_threads[s_running_thread_id].uc);
+}
+
+unsigned int init_scheduler()
+{
+	struct sigaction sa;
+
+	/* Prepare the scheduler's handler struct */
 	sa.sa_flags = SA_RESTART;
 	sigfillset(&sa.sa_mask);
 	sa.sa_handler = scheduler;
+
+	/* TODO: perror */
+
+	/* Set the 'scheduler' signal */
 	if (sigaction(SIGALRM, &sa, NULL) < 0)
 	{
 		return SYS_ERR;
 	}
 
-	/* Set the 'profiler' signal */
+	return 0;
+}
 
-	/* Start all the threads */
+void profiler(int signal)
+{
+	// Make sure thread table allocated
+	if (s_threads == NULL)
+	{
+		/* TODO: perror */
+		exit(1);
+	}
+
+	// Update the current running thread's run counter
+	s_threads[s_running_thread_id].vtime += PROFILER_INTERVAL_MSEC;
+}
+
+int init_profiler()
+{
+	struct itimerval itv;
+	struct sigaction sa;
+
+	/* Initialize the data structures for SIGVTALRM handling. */
+	sa.sa_flags = SA_RESTART;
+	sigfillset(&sa.sa_mask);
+	sa.sa_handler = profiler;
+
+	/* set up vtimer for accounting */
+	itv.it_interval.tv_sec = 0;
+	itv.it_interval.tv_usec = PROFILER_INTERVAL_USEC;
+	itv.it_value = itv.it_interval;
+
+	/* Set the profiler signal */
+	if (sigaction(SIGVTALRM, &sa, NULL) < 0)
+	{
+		return SYS_ERR;
+	}
+
+	/* Start the profiler timer */
+	if (setitimer(ITIMER_VIRTUAL, &itv, NULL) < 0)
+	{
+		return SYS_ERR;
+	}
+
+	return 0;
+}
+
+int prepare_all_threads()
+{
+	unsigned int i;
+
+	/* Go thread by thread */
 	for (i = 0; i < s_num_spawned_threads; ++i)
 	{
 		ut_slot pCurrThread = &s_threads[i];
@@ -181,32 +308,5 @@ int ut_start(void)
 		}
 	}
 
-	/* Init to run the first thread */
-	s_running_thread_id = 0;
-
-	/* Start running the system */
-
-	alarm(QUANTOM_SEC);
-	swapcontext(&s_runner_context, &s_threads[s_running_thread_id].uc);
-
 	return 0;
-}
-
-unsigned long ut_get_vtime(tid_t tid)
-{
-	return 0;
-}
-
-void scheduler(int signal)
-{
-	/* Set the next scheduling to occur */
-	alarm(QUANTOM_SEC);
-
-	/* Handle thread list's circularity,
-	 * next one on the list */
-	s_running_thread_id = (s_running_thread_id + 1) % s_threads_size;
-/*	printf("in signal handler: switching from %d to %d\n",
-			s_running_thread,
-			THREAD_NUM + 1 - s_running_thread); */
-	swapcontext(&s_current_context, &s_threads[s_running_thread_id].uc);
 }

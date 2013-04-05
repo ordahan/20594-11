@@ -1,7 +1,7 @@
 all: binsem.a ut.a ph 
 FLAGS = -Wall -g -L./
 	
-ph: ph.c 
+ph: ph.c libbinsem.a libut.a
 	gcc ${FLAGS} ph.c -lbinsem -lut -o ph
 
 binsem.a:
