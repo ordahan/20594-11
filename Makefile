@@ -5,9 +5,9 @@ ph: ph.c libbinsem.a libut.a
 	gcc ${FLAGS} ph.c -lbinsem -lut -o ph
 
 binsem.a:
-#	gcc $(FLAGS)  -c binsem.c
-#	ar rcu libbinsem.a binsem.o
-#	ranlib libbinsem.a 
+	gcc $(FLAGS)  -c binsem.c
+	ar rcu libbinsem.a binsem.o
+	ranlib libbinsem.a 
 
 
 ut.a:
@@ -20,5 +20,4 @@ clean:
 	rm -f a.out
 	rm -f *~
 	rm -f ph
-#	rm -f *a
-	rm -f libut.a 
+	rm -f *a 
