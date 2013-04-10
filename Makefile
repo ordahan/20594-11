@@ -1,9 +1,6 @@
-all: clean binsem.a ut.a ph 
-FLAGS = -Wall -g -L./
+all: binsem.a ut.a
+FLAGS = -Wall -L./
 	
-ph: ph.c libbinsem.a libut.a
-	gcc ${FLAGS} ph.c -lbinsem -lut -o ph
-
 binsem.a:
 	gcc $(FLAGS)  -c binsem.c
 	ar rcu libbinsem.a binsem.o
