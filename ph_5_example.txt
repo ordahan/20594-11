@@ -1,10 +1,15 @@
+Entering phil' 0
 Philosopher (0) is thinking
+Entering phil' 1
 Philosopher (1) is thinking
 Philosopher (1) is hungry
 Philosopher (1) is eating
+Entering phil' 2
 Philosopher (2) is thinking
 Philosopher (2) is hungry
+Entering phil' 3
 Philosopher (3) is thinking
+Entering phil' 4
 Philosopher (4) is thinking
 Philosopher (4) is hungry
 Philosopher (4) is eating
@@ -15,8 +20,9 @@ Philosopher (3) is hungry
 Philosopher (4) is thinking
 Philosopher (4) is hungry
 Philosopher (0) is eating
-Philosopher (0) used the CPU 2.100 sec.
-Philosopher (1) used the CPU 1.990 sec.
-Philosopher (2) used the CPU 1.370 sec.
+Philosopher (1) is hungry
+Philosopher (0) used the CPU 2.420 sec.
+Philosopher (1) used the CPU 2.850 sec.
+Philosopher (2) used the CPU 1.800 sec.
 Philosopher (3) used the CPU 1.420 sec.
-Philosopher (4) used the CPU 1.770 sec.
+Philosopher (4) used the CPU 1.780 sec.
