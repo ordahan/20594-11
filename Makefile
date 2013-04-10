@@ -5,10 +5,9 @@ ph: ph.c libbinsem.a libut.a
 	gcc ${FLAGS} ph.c -lbinsem -lut -o ph
 
 binsem.a:
-	gcc $(FLAGS)  -c binsem.c
-	ar rcu libbinsem.a binsem.o
-	ranlib libbinsem.a 
-
+	#gcc $(FLAGS)  -c binsem.c
+	#ar rcu libbinsem.a binsem.o
+	#ranlib libbinsem.a 
 
 ut.a:
 	gcc $(FLAGS)  -c ut.c
