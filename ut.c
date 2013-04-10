@@ -21,12 +21,10 @@
 typedef void (*thread_main)(int);
 
 /* Global structures */
-static ucontext_t s_runner_context; /* Context of the thread that started the library */
 static ut_slot s_threads;
 static unsigned int s_threads_size = 0;
 static unsigned int s_num_spawned_threads = 0;
-static tid_t s_running_thread_id = 0;
-static ucontext_t s_current_context;
+static tid_t s_current_thread_id = 0;
 
 /* Internal functions */
 
@@ -83,14 +81,15 @@ void set_num_threads_in_valid_range(int tab_size)
 		tab_size > MAX_TAB_SIZE||
 		tab_size < 0) /* As this is a signed integer, it might be negative
 					which of-course has no real meaning.
-					Assume MIN_num is >= 0? not healthy.*/
+					Assume MIN_TAB_SIZE is >= 0? not healthy.*/
 	{
 		s_threads_size = MAX_TAB_SIZE;
 	}
 	/* Legal size */
 	else
 	{
-		s_threads_size = tab_size;
+		/* Save room for the original dummy thread at 0*/
+		s_threads_size = tab_size + 1;
 	}
 }
 
@@ -99,12 +98,6 @@ int ut_init(int tab_size)
 	/* Init counters */
 	s_num_spawned_threads = 0;
 	s_threads_size = 0;
-
-	/* Delete the current table if exists */
-	if (s_threads != NULL)
-	{
-		free(s_threads);
-	}
 
 	/* Set the table size */
 	set_num_threads_in_valid_range(tab_size);
@@ -123,8 +116,8 @@ int ut_init(int tab_size)
 
 tid_t ut_spawn_thread(thread_main main, int arg)
 {
-	unsigned int current_thread_num = s_num_spawned_threads;
-	ut_slot pCurrThreadSlot = &s_threads[current_thread_num];
+	unsigned int current_slot = s_num_spawned_threads + 1;
+	ut_slot pCurrThreadSlot = &s_threads[current_slot];
 	ucontext_t* pCurrThreadContext = &pCurrThreadSlot->uc;
 
 	/* Assert that the lib was initiated already */
@@ -134,7 +127,7 @@ tid_t ut_spawn_thread(thread_main main, int arg)
 	}
 
 	/* Make sure there is room in the table */
-	if (s_num_spawned_threads >= s_threads_size)
+	if (current_slot >= s_threads_size)
 	{
 		return TAB_FULL;
 	}
@@ -151,10 +144,9 @@ tid_t ut_spawn_thread(thread_main main, int arg)
 	}
 
 	/* Create the proper context of the new thread
-	 * derived from the current one,
-	 * link it to the running context.
+	 * link it to original thread.
 	 */
-	pCurrThreadContext->uc_link = &s_runner_context;
+	pCurrThreadContext->uc_link = &s_threads[0].uc;
 
 	/* Allocate stack space for the thread */
 	pCurrThreadContext->uc_stack.ss_sp = malloc(STACKSIZE);
@@ -173,7 +165,11 @@ tid_t ut_spawn_thread(thread_main main, int arg)
 	/* Init the running time */
 	pCurrThreadSlot->vtime = 0;
 
-	return current_thread_num;
+	/* The thread at slot 0 is the main thread,
+	 * we don't count it as a thread with TID,
+	 * so slot 1 is TID 0 de-facto.
+	 */
+	return current_slot - 1;
 }
 
 int ut_start(void)
@@ -188,16 +184,17 @@ int ut_start(void)
 	if (prepare_all_threads() != 0) return SYS_ERR;
 
 	/* Init to run the first thread */
-	s_running_thread_id = 0;
+	s_current_thread_id = 0;
 
 	/* Start running the system */
 	errno = 0;
 	alarm(QUANTOM_SEC);
+
 	/* If swapcontext returns, its an error.
-	 * Will set 'errno' on any failure.
+	 * In that case 'errno' will be set on any failure.
 	 */
-	swapcontext(&s_runner_context,
-				&s_threads[s_running_thread_id].uc);
+	swapcontext(&s_threads[0].uc,
+				&s_threads[1].uc);
 
 	/* Make sure system started */
 	if (errno != 0)
@@ -222,6 +219,8 @@ unsigned long ut_get_vtime(tid_t tid)
 
 void scheduler(int signal)
 {
+	tid_t previous_thread_id = s_current_thread_id;
+
 	// Make sure thread table allocated
 	if (s_threads == NULL)
 	{
@@ -234,10 +233,16 @@ void scheduler(int signal)
 	errno = 0;
 	alarm(QUANTOM_SEC);
 
-	/* Handle thread list's circularity,
-	 * next one on the list */
-	s_running_thread_id = (s_running_thread_id + 1) % s_threads_size;
-	swapcontext(&s_current_context, &s_threads[s_running_thread_id].uc);
+	/* Handle list's circularity, next thread */
+	s_current_thread_id++;
+	if (s_current_thread_id == s_num_spawned_threads)
+	{
+		s_current_thread_id = 0;
+	}
+
+	/* Swap to the current one */
+	swapcontext(&s_threads[previous_thread_id + 1].uc,
+			    &s_threads[s_current_thread_id + 1].uc);
 
 	/* Critical error.. */
 	if (errno != 0)
@@ -273,7 +278,7 @@ void profiler(int signal)
 	}
 
 	// Update the current running thread's run counter
-	s_threads[s_running_thread_id].vtime += PROFILER_INTERVAL_MSEC;
+	s_threads[s_current_thread_id].vtime += PROFILER_INTERVAL_MSEC;
 }
 
 int init_profiler()
@@ -311,7 +316,7 @@ int prepare_all_threads()
 	unsigned int i;
 
 	/* Go thread by thread */
-	for (i = 0; i < s_num_spawned_threads; ++i)
+	for (i = 1; i <= s_num_spawned_threads; ++i)
 	{
 		ut_slot pCurrThread = &s_threads[i];
 
